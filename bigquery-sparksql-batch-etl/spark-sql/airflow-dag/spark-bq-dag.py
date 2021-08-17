@@ -15,12 +15,13 @@ from airflow.utils.trigger_rule import TriggerRule
 
 current_date = str(date.today())
 
-BUCKET = "gs://bucket_name"
+BUCKET = "gs://bucket_name"    # specify bucket name
 
-PROJECT_ID = "your_project_id"
+PROJECT_ID = "your_project_id"   # specify project id
 
-PYSPARK_JOB = BUCKET + "/spark-job/flights-etl.py"
+PYSPARK_JOB = BUCKET + "/spark-job/flights-etl.py"     # PySpark job which is path to PySpark script
 
+# DAG variables which is a Python dictionary
 DEFAULT_DAG_ARGS = {
     'owner':"airflow",
     'depends_on_past' : False,
@@ -32,8 +33,9 @@ DEFAULT_DAG_ARGS = {
     "project_id":PROJECT_ID,
     "scheduled_interval":"30 2 * * *"
 }
-
+# define DAG
 with DAG("flights_delay_etl",default_args=DEFAULT_DAG_ARGS) as dag : 
+# define ist of tasks within DAG
 
     create_cluster = DataprocClusterCreateOperator(
 
@@ -46,13 +48,14 @@ with DAG("flights_delay_etl",default_args=DEFAULT_DAG_ARGS) as dag :
         zone ="asia-east1-a"
     )
 
+    # submit PySpark job
     submit_pyspark = DataProcPySparkOperator(
         task_id = "run_pyspark_etl",
         main = PYSPARK_JOB,
         cluster_name="ephemeral-spark-cluster-{{ds_nodash}}",
         region="asia-east1"
     )
-
+# load data from  GCS to BigQuery
     bq_load_delays_by_distance = GoogleCloudStorageToBigQueryOperator(
 
         task_id = "bq_load_avg_delays_by_distance",
@@ -80,7 +83,7 @@ with DAG("flights_delay_etl",default_args=DEFAULT_DAG_ARGS) as dag :
         write_disposition="WRITE_APPEND",
         max_bad_records=0
     )
-
+# Delete DAtaproc cluster
     delete_cluster = DataprocClusterDeleteOperator(
 
         task_id ="delete_dataproc_cluster",
@@ -88,14 +91,15 @@ with DAG("flights_delay_etl",default_args=DEFAULT_DAG_ARGS) as dag :
         region="asia-east1",
         trigger_rule = TriggerRule.ALL_DONE
     )
-
+# Delete transformed files from the bucket folder
     delete_tranformed_files = BashOperator(
         task_id = "delete_tranformed_files",
         bash_command = "gsutil -m rm -r " +BUCKET + "/flights_data_output/*"
     )
 
+    # Instantiate DAG
     create_cluster.dag = dag
-
+# Submit PSpark job as down stream task to the create cluster task.
     create_cluster.set_downstream(submit_pyspark)
 
     submit_pyspark.set_downstream([bq_load_delays_by_flight_nums,bq_load_delays_by_distance,delete_cluster])
